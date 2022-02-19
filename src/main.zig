@@ -3,7 +3,7 @@ const c = @import("c.zig").c;
 const glfw = @import("glfw");
 const theme = @import("theme.zig");
 
-// https://github.com/jeremy-rifkin/Wordlist
+// https://github.com/dwyl/english-words/
 const words_raw = @embedFile("../res/wordlist.txt");
 
 pub fn main() !void {
