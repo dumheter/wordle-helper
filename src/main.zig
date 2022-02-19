@@ -6,6 +6,8 @@ const theme = @import("theme.zig");
 // https://github.com/dwyl/english-words/
 const words_raw = @embedFile("../res/wordlist.txt");
 
+// swedish word list https://github.com/martinlindhe/wordlist_swedish
+
 pub fn main() !void {
     std.debug.print("-*- wordle helper -*-\n", .{});
 
@@ -31,7 +33,7 @@ pub fn main() !void {
     var run: bool = true;
 
     var display_size = c.ImVec2{
-        .x = 380,
+        .x = 400,
         .y = 720,
     };
 
@@ -130,8 +132,24 @@ pub fn main() !void {
             c.igPushStyleColor_Vec4(c.ImGuiCol_Text, theme.green);
             if (c.igInputTextWithHint(
                 "green letters",
-                "> space to skip",
+                "> list green letters",
                 @ptrCast([*c]u8, filter.green_letters[0..]),
+                @intCast(usize, word_length+1),
+                c.ImGuiInputTextFlags_CharsUppercase,
+                null,
+                null
+            )) {
+                // user entered a filter, filter the words!
+                try filterWords(words, &filtered_words, filter);
+                try rasterizeWords(filtered_words, &rasterized_words);
+            }
+            c.igPopStyleColor(1);
+
+            c.igPushStyleColor_Vec4(c.ImGuiCol_Text, theme.yellow);
+            if (c.igInputTextWithHint(
+                "yellow letters",
+                "> list yellow letters",
+                @ptrCast([*c]u8, filter.yellow_letters[0..]),
                 @intCast(usize, word_length+1),
                 c.ImGuiInputTextFlags_CharsUppercase,
                 null,
@@ -226,6 +244,8 @@ fn filterWords(words: std.ArrayList([kMaxWordLen+1]u8), filtered_words: *std.Arr
 
     for (words.items) |word| {
         var pass = true;
+
+        // green
         for (word) |w, i| {
             if (filter.green_letters[i] == 0) break;
             if (filter.green_letters[i] != ' '
@@ -236,6 +256,7 @@ fn filterWords(words: std.ArrayList([kMaxWordLen+1]u8), filtered_words: *std.Arr
             }
         }
 
+        // gray
         for (word) |w| {
             for (filter.gray_letters) |g| {
                 if (g == 0) break;
@@ -243,6 +264,23 @@ fn filterWords(words: std.ArrayList([kMaxWordLen+1]u8), filtered_words: *std.Arr
                     pass = false;
                     break;
                 }
+            }
+        }
+
+        // yellow
+        for (filter.yellow_letters) |y| {
+            if (y == 0) break;
+
+            var yellow_found = false;
+            for (word) |w| {
+                if (y == w or y + 32 == w) {
+                    yellow_found = true;
+                    break;
+                }
+            }
+            if (!yellow_found) {
+                pass = false;
+                break;
             }
         }
 
@@ -264,11 +302,13 @@ fn rasterizeWords(words: std.ArrayList([kMaxWordLen+1]u8), rasterized_words: *st
 
 const Filter = struct {
     green_letters: [kMaxWordLen+1]u8,
+    yellow_letters: [kMaxWordLen+1]u8,
     gray_letters: [30]u8,
 
     pub fn init() Filter {
-        var filter = Filter{.green_letters = undefined, .gray_letters = undefined};
+        var filter = Filter{.green_letters = undefined, .gray_letters = undefined, .yellow_letters = undefined};
         filter.green_letters = [_]u8{0} ** filter.green_letters.len;
+        filter.yellow_letters = [_]u8{0} ** filter.yellow_letters.len;
         filter.gray_letters = [_]u8{0} ** filter.gray_letters.len;
         return filter;
     }
