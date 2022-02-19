@@ -3,14 +3,35 @@ const c = @import("c.zig").c;
 const glfw = @import("glfw");
 const theme = @import("theme.zig");
 
+// https://github.com/jeremy-rifkin/Wordlist
+const words_raw = @embedFile("../res/wordlist.txt");
+
 pub fn main() !void {
-    std.debug.print("-*- zig imgui template -*-\n", .{});
+    std.debug.print("-*- wordle helper -*-\n", .{});
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    var allocator = gpa.allocator();
+
+    var words = try std.ArrayList([kMaxWordLen+1]u8).initCapacity(allocator, 10000);
+    var word_length: c_int = 5;
+    try gatherWords(@intCast(usize, word_length), words_raw, &words);
+    defer words.deinit();
+
+    var filtered_words = try words.clone();
+    defer filtered_words.deinit();
+
+    var rasterized_words = std.ArrayList(u8).init(allocator);
+    try rasterizeWords(filtered_words, &rasterized_words);
+    defer rasterized_words.deinit();
+
+    var filter = Filter.init();
 
     var font: *c.ImFont = undefined;
     var run: bool = true;
 
     var display_size = c.ImVec2{
-        .x = 1280,
+        .x = 380,
         .y = 720,
     };
 
@@ -24,7 +45,7 @@ pub fn main() !void {
         window = try glfw.Window.create(
             @floatToInt(u32, display_size.x),
             @floatToInt(u32, display_size.y),
-            "zig imgui template",
+            "wordle helper",
             null,
             null,
             glfw.Window.Hints{
@@ -83,15 +104,69 @@ pub fn main() !void {
         // YOUR CODE GOES HERE
 
         {
-            _ = c.igBegin("Your code goes here", 0, 0);
+            var flags: c.ImGuiWindowFlags = c.ImGuiWindowFlags_NoTitleBar;
+            flags |= c.ImGuiWindowFlags_NoMove;
+            flags |= c.ImGuiWindowFlags_NoResize;
+            flags |= c.ImGuiWindowFlags_NoCollapse;
+            c.igSetNextWindowPos(c.ImVec2{ .x = 0, .y = 0 }, c.ImGuiCond_Always, c.ImVec2{ .x = 0, .y = 0 });
+            const wsize = try window.getSize();
+            const size = c.ImVec2{ .x = @intToFloat(f32, wsize.width), .y = @intToFloat(f32, wsize.height) };
+            c.igSetNextWindowSize(size, c.ImGuiCond_Always);
+            _ = c.igBegin("main-window", null, flags);
 
-            c.igText("It's this easy to draw text with imgui");
+            //var text_size: c.ImVec2 = undefined;
+            //c.igCalcTextSize(&text_size, "toggle imgui demo", null, true, 1000.0);
+            //if (c.igButton("toggle imgui demo", c.ImVec2{.x = text_size.x + 8, .y = text_size.y + 8})) {
+            //    show_demo_window = !show_demo_window;
+            //}
 
-            var text_size: c.ImVec2 = undefined;
-            c.igCalcTextSize(&text_size, "toggle imgui demo", null, true, 1000.0);
-            if (c.igButton("toggle imgui demo", c.ImVec2{.x = text_size.x + 8, .y = text_size.y + 8})) {
-                show_demo_window = !show_demo_window;
+            if (c.igSliderInt("word length", &word_length, 1, kMaxWordLen, null, 0)) {
+                // user moved slider, recompute the list of words
+                try gatherWords(@intCast(usize, word_length), words_raw, &words);
+                try filterWords(words, &filtered_words, filter);
+                try rasterizeWords(filtered_words, &rasterized_words);
             }
+
+            c.igPushStyleColor_Vec4(c.ImGuiCol_Text, theme.green);
+            if (c.igInputTextWithHint(
+                "green letters",
+                "> space to skip",
+                @ptrCast([*c]u8, filter.green_letters[0..]),
+                @intCast(usize, word_length+1),
+                c.ImGuiInputTextFlags_CharsUppercase,
+                null,
+                null
+            )) {
+                // user entered a filter, filter the words!
+                try filterWords(words, &filtered_words, filter);
+                try rasterizeWords(filtered_words, &rasterized_words);
+            }
+            c.igPopStyleColor(1);
+
+            c.igPushStyleColor_Vec4(c.ImGuiCol_Text, theme.base00);
+            if (c.igInputTextWithHint(
+                "gray letters",
+                "> list gray letters",
+                @ptrCast([*c]u8, filter.gray_letters[0..]),
+                @intCast(usize, filter.gray_letters.len),
+                c.ImGuiInputTextFlags_CharsUppercase,
+                null,
+                null
+            )) {
+                // user entered a filter, filter the words!
+                try filterWords(words, &filtered_words, filter);
+                try rasterizeWords(filtered_words, &rasterized_words);
+            }
+            c.igPopStyleColor(1);
+
+            c.igSeparator();
+            c.igText("Found %i words.", filtered_words.items.len);
+
+            c.igSeparator();
+            c.igTextUnformatted(
+                @ptrCast([*c]const u8, rasterized_words.items),
+                @ptrCast([*c]const u8, &rasterized_words.items[rasterized_words.items.len-1])
+            );
 
             c.igEnd();
         }
@@ -125,3 +200,76 @@ pub fn main() !void {
     window.destroy();
     glfw.terminate();
 }
+
+const kMaxWordLen: usize = 6;
+fn gatherWords(word_len: usize, input: [:0]const u8, words: *std.ArrayList([kMaxWordLen+1]u8)) !void {
+    std.debug.assert(word_len <= kMaxWordLen);
+    words.clearRetainingCapacity();
+
+    var iter = std.mem.split(u8, input, "\n");
+    while (iter.next()) |line| {
+        if (line.len > 0) {
+            var adjust: usize = if (line[line.len-1] == 13) 1 else 0;
+            if (line.len == word_len + adjust) {
+                var buf: [kMaxWordLen+1]u8 = [_]u8{' '} ** (kMaxWordLen+1);
+                buf[kMaxWordLen] = '\n';
+                for (line[0..line.len-adjust]) |l, i| { buf[i] = l; }
+                try words.append(buf);
+            }
+        }
+    }
+}
+
+fn filterWords(words: std.ArrayList([kMaxWordLen+1]u8), filtered_words: *std.ArrayList([kMaxWordLen+1]u8), filter: Filter) !void {
+    filtered_words.clearRetainingCapacity();
+    try filtered_words.ensureTotalCapacity(words.items.len);
+
+    for (words.items) |word| {
+        var pass = true;
+        for (word) |w, i| {
+            if (filter.green_letters[i] == 0) break;
+            if (filter.green_letters[i] != ' '
+                    and (filter.green_letters[i] != w
+                             and filter.green_letters[i] + 32 != w)) {
+                pass = false;
+                break;
+            }
+        }
+
+        for (word) |w| {
+            for (filter.gray_letters) |g| {
+                if (g == 0) break;
+                if (g == w or g +32 == w) {
+                    pass = false;
+                    break;
+                }
+            }
+        }
+
+        if (pass) {
+            filtered_words.appendAssumeCapacity(word);
+        }
+    }
+}
+
+fn rasterizeWords(words: std.ArrayList([kMaxWordLen+1]u8), rasterized_words: *std.ArrayList(u8)) !void {
+    rasterized_words.clearRetainingCapacity();
+    try rasterized_words.ensureTotalCapacity((kMaxWordLen+1) * words.items.len + 1);
+
+    for (words.items) |word| {
+        rasterized_words.appendSliceAssumeCapacity(word[0..word.len]);
+    }
+    rasterized_words.appendAssumeCapacity(0);
+}
+
+const Filter = struct {
+    green_letters: [kMaxWordLen+1]u8,
+    gray_letters: [30]u8,
+
+    pub fn init() Filter {
+        var filter = Filter{.green_letters = undefined, .gray_letters = undefined};
+        filter.green_letters = [_]u8{0} ** filter.green_letters.len;
+        filter.gray_letters = [_]u8{0} ** filter.gray_letters.len;
+        return filter;
+    }
+};

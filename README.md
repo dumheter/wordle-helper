@@ -1,1 +1,2 @@
 # wordle-helper
+![preview gif]()
