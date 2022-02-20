@@ -1,3 +1,4 @@
+const std = @import("std");
 const Builder = @import("std").build.Builder;
 const glfw = @import("deps/mach-glfw/build.zig");
 
@@ -7,6 +8,7 @@ pub fn build(b: *Builder) void {
     const mode = b.standardReleaseOptions();
 
     const exe = b.addExecutable("dedit", "src/main.zig");
+    exe.subsystem = std.Target.SubSystem.Windows;
     exe.setTarget(target);
     exe.setBuildMode(mode);
 
