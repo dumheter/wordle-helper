@@ -1,6 +1,8 @@
 const std = @import("std");
 const glfw = @import("glfw");
-const theme = @import("theme.zig");
+const zui = @import("zimgui");
+const zgl = @import("zimgui_backend").OpenGl3;
+const zglfw = @import("zimgui_backend").Glfw;
 
 // https://github.com/dwyl/english-words/
 const words_raw = @embedFile("res/wordlist.txt");
@@ -15,7 +17,7 @@ pub fn main() !void {
     var allocator = gpa.allocator();
 
     var words = try std.ArrayList([kMaxWordLen + 1]u8).initCapacity(allocator, 10000);
-    var word_length: c_int = 5;
+    var word_length: i32 = 5;
     try gatherWords(@intCast(usize, word_length), words_raw, &words);
     defer words.deinit();
 
@@ -28,57 +30,73 @@ pub fn main() !void {
 
     var filter = Filter.init();
 
-    var font: *c.ImFont = undefined;
-    var run: bool = true;
+    ///////////////////////////////////////////////////////////////////////////////
+    // setup glfw & imgui
 
-    var display_size = c.ImVec2{
-        .x = 400,
+    const display_size = zui.Vec2{
+        .x = 480,
         .y = 720,
     };
 
-    // setup glfw & imgui
     var window: glfw.Window = undefined;
-    var context: *c.ImGuiContext = undefined;
-    var io: *c.ImGuiIO = undefined;
+    var ctx: zui.Context = undefined;
+    var io: zui.Io = undefined;
     {
-        try glfw.init(glfw.InitHints{});
+        _ = glfw.init(glfw.InitHints{});
 
-        window = try glfw.Window.create(@floatToInt(u32, display_size.x), @floatToInt(u32, display_size.y), "wordle helper", null, null, glfw.Window.Hints{
-            .context_version_major = 3,
-            .context_version_minor = 0,
-        });
+        glfw.setErrorCallback(glfwErrorCallback);
 
-        try glfw.makeContextCurrent(window);
-        try glfw.swapInterval(1); // vsync
+        window = glfw.Window.create(
+            @floatToInt(u32, display_size.x),
+            @floatToInt(u32, display_size.y),
+            "zig imgui template",
+            null,
+            null,
+            glfw.Window.Hints{
+                .context_version_major = 4,
+                .context_version_minor = 5,
+                .opengl_profile = .opengl_core_profile,
+        }) orelse unreachable;
 
-        std.debug.print("imgui version: {s}\n", .{c.igGetVersion()});
-        context = c.igCreateContext(null);
+        glfw.makeContextCurrent(window);
+        glfw.swapInterval(1); // vsync
 
-        theme.setImguiTheme(&c.igGetStyle().*.Colors);
-
-        if (!c.ImGui_ImplGlfw_InitForOpenGL(@ptrCast(*c.GLFWwindow, window.handle), true)) {
-            std.debug.panic("", .{});
+        if (zgl.gladLoadGLLoader(glfw.getProcAddress) == 0) {
+            std.debug.panic("Could not pass glad the loader function.\n", .{});
         }
 
-        const glsl_version = "#version 130";
-        if (!c.ImGui_ImplOpenGL3_Init(glsl_version)) {
-            std.debug.panic("could not init opengl", .{});
+        zui.init();
+        ctx = zui.getCurrentContext() orelse unreachable;
+
+        zui.setImguiTheme();
+
+        if (!zglfw.initForOpenGL(window.handle, true)) {
+            std.debug.panic("Failed to init glfw for OpenGL.", .{});
         }
 
-        io = c.igGetIO();
-        var text_pixels: [*c]u8 = undefined;
-        var text_w: i32 = undefined;
-        var text_h: i32 = undefined;
-        c.ImFontAtlas_GetTexDataAsRGBA32(io.Fonts, &text_pixels, &text_w, &text_h, null);
-        font = c.ImFontAtlas_AddFontFromFileTTF(io.Fonts, "res/font/CascadiaMonoPL.ttf", 15.0, null, c.ImFontAtlas_GetGlyphRangesDefault(io.Fonts));
-        _ = c.ImFontAtlas_Build(io.Fonts);
+        const glsl_version = "#version 450";
+        if (!zgl.init(glsl_version)) {
+            std.debug.panic("Failed to init OpenGL3.", .{});
+        }
 
-        io.DisplaySize = display_size;
-        io.DeltaTime = 1.0 / 60.0;
+        io = ctx.getIo();
+        var font_atlas = io.getFontAtlas();
+
+        _ = font_atlas.addFontFromFileTTF("src/res/font/CascadiaMonoPL.ttf", 15.0);
+        if (!font_atlas.build()) {
+            std.debug.print("Failed to build fonts.", .{});
+        }
+
+        io.setDisplaySize(display_size);
+
+        zgl.enable(zgl.DEBUG_OUTPUT) catch {};
+        var not_user_param: usize = undefined;
+        zgl.debugMessageCallback(onOpenGl3DebugMessage, @ptrCast(*const anyopaque, &not_user_param));
     }
 
+    ///////////////////////////////////////////////////////////////////////////////
     // run loop
-    var show_demo_window = false;
+    var run: bool = true;
     while (run) {
         if (glfw.pollEvents()) {} else |err| {
             std.debug.panic("failed to poll events: {}", .{err});
@@ -90,89 +108,70 @@ pub fn main() !void {
             run = false;
         }
 
-        c.ImGui_ImplOpenGL3_NewFrame();
-        c.ImGui_ImplGlfw_NewFrame();
-        c.igNewFrame();
-        c.igPushFont(font);
+        zgl.newFrame();
+        zglfw.newFrame();
+        zui.newFrame();
 
         ///////////////////////////////////////////////////////////////////////////////
         // YOUR CODE GOES HERE
 
         {
-            var flags: c.ImGuiWindowFlags = c.ImGuiWindowFlags_NoTitleBar;
-            flags |= c.ImGuiWindowFlags_NoMove;
-            flags |= c.ImGuiWindowFlags_NoResize;
-            flags |= c.ImGuiWindowFlags_NoCollapse;
-            c.igSetNextWindowPos(c.ImVec2{ .x = 0, .y = 0 }, c.ImGuiCond_Always, c.ImVec2{ .x = 0, .y = 0 });
-            const wsize = try window.getSize();
-            const size = c.ImVec2{ .x = @intToFloat(f32, wsize.width), .y = @intToFloat(f32, wsize.height) };
-            c.igSetNextWindowSize(size, c.ImGuiCond_Always);
-            _ = c.igBegin("main-window", null, flags);
+            zui.setNextWindowPos(zui.Vec2{ .x = 0, .y = 0 }, .Always, zui.Vec2{ .x = 0, .y = 0 });
+            const wsize = window.getSize();
+            const size = zui.Vec2{ .x = @intToFloat(f32, wsize.width), .y = @intToFloat(f32, wsize.height) };
+            zui.setNextWindowSize(size, .Always);
+            _ = zui.begin("main-window", null, zui.WindowFlags.NoDecoration);
 
-            //var text_size: c.ImVec2 = undefined;
-            //c.igCalcTextSize(&text_size, "toggle imgui demo", null, true, 1000.0);
-            //if (c.igButton("toggle imgui demo", c.ImVec2{.x = text_size.x + 8, .y = text_size.y + 8})) {
-            //    show_demo_window = !show_demo_window;
-            //}
-
-            if (c.igSliderInt("word length", &word_length, 1, kMaxWordLen, null, 0)) {
+            if (zui.sliderInt("word length", .{}, &word_length, 1, kMaxWordLen)) {
                 // user moved slider, recompute the list of words
                 try gatherWords(@intCast(usize, word_length), words_raw, &words);
                 try filterWords(words, &filtered_words, filter);
                 try rasterizeWords(filtered_words, &rasterized_words);
             }
 
-            c.igPushStyleColor_Vec4(c.ImGuiCol_Text, theme.green);
-            if (c.igInputTextWithHint("green letters", "> list green letters", @ptrCast([*c]u8, filter.green_letters[0..]), @intCast(usize, word_length + 1), c.ImGuiInputTextFlags_CharsUppercase, null, null)) {
+            zui.pushStyleColor(.Text, zui.ColorSolarized.rgbagreen);
+            if (zui.inputTextWithHint("green letters", .{}, "> list green letters", .{}, filter.green_letters[0..@intCast(usize, word_length) + 1], .CharsUppercase)) {
                 // user entered a filter, filter the words!
                 try filterWords(words, &filtered_words, filter);
                 try rasterizeWords(filtered_words, &rasterized_words);
             }
-            c.igPopStyleColor(1);
+            zui.popStyleColor(1);
 
-            c.igPushStyleColor_Vec4(c.ImGuiCol_Text, theme.yellow);
-            if (c.igInputTextWithHint("yellow letters", "> list yellow letters", @ptrCast([*c]u8, filter.yellow_letters[0..]), @intCast(usize, word_length + 1), c.ImGuiInputTextFlags_CharsUppercase, null, null)) {
+            zui.pushStyleColor(.Text, zui.ColorSolarized.rgbayellow);
+            if (zui.inputTextWithHint("yellow letters", .{}, "> list yellow letters", .{}, filter.yellow_letters[0..@intCast(usize, word_length) + 1], .CharsUppercase)) {
                 // user entered a filter, filter the words!
                 try filterWords(words, &filtered_words, filter);
                 try rasterizeWords(filtered_words, &rasterized_words);
             }
-            c.igPopStyleColor(1);
+            zui.popStyleColor(1);
 
-            c.igPushStyleColor_Vec4(c.ImGuiCol_Text, theme.base00);
-            if (c.igInputTextWithHint("gray letters", "> list gray letters", @ptrCast([*c]u8, filter.gray_letters[0..]), @intCast(usize, filter.gray_letters.len), c.ImGuiInputTextFlags_CharsUppercase, null, null)) {
+            zui.pushStyleColor(.Text, zui.ColorSolarized.rgbabase00);
+            if (zui.inputTextWithHint("gray letters", .{}, "> list gray letters", .{}, filter.gray_letters[0..filter.gray_letters.len], .CharsUppercase)) {
                 // user entered a filter, filter the words!
                 try filterWords(words, &filtered_words, filter);
                 try rasterizeWords(filtered_words, &rasterized_words);
             }
-            c.igPopStyleColor(1);
+            zui.popStyleColor(1);
 
-            c.igSeparator();
-            c.igText("Found %i words.", filtered_words.items.len);
+            zui.separator();
+            zui.text("Found {} words.", .{filtered_words.items.len});
 
-            c.igSeparator();
-            c.igTextUnformatted(@ptrCast([*c]const u8, rasterized_words.items), @ptrCast([*c]const u8, &rasterized_words.items[rasterized_words.items.len - 1]));
+            zui.separator();
+            zui.text("{s}", .{rasterized_words.items[0..rasterized_words.items.len - 1]});
 
-            c.igEnd();
-        }
-
-        // draw imgui's demo window
-        if (show_demo_window) {
-            c.igShowDemoWindow(&show_demo_window);
+            zui.end();
         }
 
         ///////////////////////////////////////////////////////////////////////////////
 
-        c.igPopFont();
-        c.igRender();
+        zui.render();
 
-        if (window.getFramebufferSize()) |size| {
-            c.glViewport(0, 0, @intCast(c_int, size.width), @intCast(c_int, size.height));
-            c.glClearColor(0.9, 0.9, 0.9, 0);
-            c.glClear(c.GL_COLOR_BUFFER_BIT);
-            c.ImGui_ImplOpenGL3_RenderDrawData(c.igGetDrawData());
-        } else |err| {
-            std.debug.panic("failed to get frame buffer size: {}", .{err});
-        }
+        const size = window.getFramebufferSize();
+        try zgl.viewport(0, 0, @intCast(i32, size.width), @intCast(i32, size.height));
+        zgl.clearColor(0.9, 0.9, 0.9, 0);
+        try zgl.clear(zgl.COLOR_BUFFER_BIT);
+        zgl.renderDrawData(zui.getDrawData() orelse unreachable);
+
 
         if (window.swapBuffers()) {} else |err| {
             std.debug.panic("failed to swap buffers: {}", .{err});
@@ -180,7 +179,7 @@ pub fn main() !void {
     }
 
     // cleanup
-    c.igDestroyContext(context);
+    zui.deinit();
     window.destroy();
     glfw.terminate();
 }
@@ -279,3 +278,16 @@ const Filter = struct {
         return filter;
     }
 };
+
+///////////////////////////////////////////////////////////////////////////////
+// See debug messages from glfw and opengl
+
+fn glfwErrorCallback(error_code: glfw.ErrorCode, msg: [:0]const u8) void {
+    std.debug.print("glfw error {}: {s}\n", .{error_code, msg});
+}
+
+fn onOpenGl3DebugMessage(source: zgl.ValueType, type_: zgl.ValueType, id: u32, severity: zgl.ValueType, length: i32, message: [*c]const u8, user_param: *const anyopaque) void {
+    _ = user_param;
+    var msg = message[0..@intCast(usize, length)];
+    std.debug.print("OpenGL3: {{id: {}, severity: {}, message: {s}, source: {}, type: {}}}\n", .{id, severity, msg, source, type_});
+}

@@ -7,25 +7,17 @@ pub fn build(b: *Builder) void {
     const mode = b.standardReleaseOptions();
 
     const exe = b.addExecutable("dedit", "src/main.zig");
-    //exe.subsystem = std.Target.SubSystem.Windows;
     exe.setTarget(target);
     exe.setBuildMode(mode);
 
     exe.addPackagePath("glfw", "deps/mach-glfw/src/main.zig");
     glfw.link(b, exe, .{}) catch unreachable;
 
-    exe.addCSourceFiles(&[_][]const u8 {
-        "deps/imgui/imgui.cpp",
-        "deps/imgui/imgui_draw.cpp",
-        "deps/imgui/imgui_tables.cpp",
-        "deps/imgui/imgui_widgets.cpp",
-        "deps/imgui/imgui_demo.cpp",
-        "deps/imgui/cimgui/imgui_impl_glfw.cpp",
-        "deps/imgui/cimgui/imgui_impl_opengl3.cpp",
-        "deps/imgui/cimgui/cimgui.cpp",
-        }, &[_][]const u8 {});
-    exe.linkLibCpp();
-    exe.addIncludePath("deps/imgui");
+    exe.addPackagePath("zimgui", "deps/zimgui/src/zimgui.zig");
+    _ = zimgui.link(b, exe, .{});
+
+    exe.addPackagePath("zimgui_backend", "deps/zimgui/src/backend_glfw_opengl3.zig");
+    zimgui.addBackendGlfwOpenGl3(b, exe, .{});
 
     exe.install();
     b.default_step.dependOn(&exe.step);
@@ -36,7 +28,7 @@ pub fn build(b: *Builder) void {
         run_cmd.addArgs(args);
     }
 
-    const run_step = b.step("run", "Run zig imgui template");
+    const run_step = b.step("run", "Run wordle-helper");
     run_step.dependOn(&run_cmd.step);
 
     var exe_tests = b.addTest("src/main.zig");
