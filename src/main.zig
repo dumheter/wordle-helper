@@ -1,10 +1,9 @@
 const std = @import("std");
-const c = @import("c.zig").c;
 const glfw = @import("glfw");
 const theme = @import("theme.zig");
 
 // https://github.com/dwyl/english-words/
-const words_raw = @embedFile("../res/wordlist.txt");
+const words_raw = @embedFile("res/wordlist.txt");
 
 // swedish word list https://github.com/martinlindhe/wordlist_swedish
 
@@ -15,7 +14,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     var allocator = gpa.allocator();
 
-    var words = try std.ArrayList([kMaxWordLen+1]u8).initCapacity(allocator, 10000);
+    var words = try std.ArrayList([kMaxWordLen + 1]u8).initCapacity(allocator, 10000);
     var word_length: c_int = 5;
     try gatherWords(@intCast(usize, word_length), words_raw, &words);
     defer words.deinit();
@@ -44,15 +43,9 @@ pub fn main() !void {
     {
         try glfw.init(glfw.InitHints{});
 
-        window = try glfw.Window.create(
-            @floatToInt(u32, display_size.x),
-            @floatToInt(u32, display_size.y),
-            "wordle helper",
-            null,
-            null,
-            glfw.Window.Hints{
-                .context_version_major = 3,
-                .context_version_minor = 0,
+        window = try glfw.Window.create(@floatToInt(u32, display_size.x), @floatToInt(u32, display_size.y), "wordle helper", null, null, glfw.Window.Hints{
+            .context_version_major = 3,
+            .context_version_minor = 0,
         });
 
         try glfw.makeContextCurrent(window);
@@ -130,15 +123,7 @@ pub fn main() !void {
             }
 
             c.igPushStyleColor_Vec4(c.ImGuiCol_Text, theme.green);
-            if (c.igInputTextWithHint(
-                "green letters",
-                "> list green letters",
-                @ptrCast([*c]u8, filter.green_letters[0..]),
-                @intCast(usize, word_length+1),
-                c.ImGuiInputTextFlags_CharsUppercase,
-                null,
-                null
-            )) {
+            if (c.igInputTextWithHint("green letters", "> list green letters", @ptrCast([*c]u8, filter.green_letters[0..]), @intCast(usize, word_length + 1), c.ImGuiInputTextFlags_CharsUppercase, null, null)) {
                 // user entered a filter, filter the words!
                 try filterWords(words, &filtered_words, filter);
                 try rasterizeWords(filtered_words, &rasterized_words);
@@ -146,15 +131,7 @@ pub fn main() !void {
             c.igPopStyleColor(1);
 
             c.igPushStyleColor_Vec4(c.ImGuiCol_Text, theme.yellow);
-            if (c.igInputTextWithHint(
-                "yellow letters",
-                "> list yellow letters",
-                @ptrCast([*c]u8, filter.yellow_letters[0..]),
-                @intCast(usize, word_length+1),
-                c.ImGuiInputTextFlags_CharsUppercase,
-                null,
-                null
-            )) {
+            if (c.igInputTextWithHint("yellow letters", "> list yellow letters", @ptrCast([*c]u8, filter.yellow_letters[0..]), @intCast(usize, word_length + 1), c.ImGuiInputTextFlags_CharsUppercase, null, null)) {
                 // user entered a filter, filter the words!
                 try filterWords(words, &filtered_words, filter);
                 try rasterizeWords(filtered_words, &rasterized_words);
@@ -162,15 +139,7 @@ pub fn main() !void {
             c.igPopStyleColor(1);
 
             c.igPushStyleColor_Vec4(c.ImGuiCol_Text, theme.base00);
-            if (c.igInputTextWithHint(
-                "gray letters",
-                "> list gray letters",
-                @ptrCast([*c]u8, filter.gray_letters[0..]),
-                @intCast(usize, filter.gray_letters.len),
-                c.ImGuiInputTextFlags_CharsUppercase,
-                null,
-                null
-            )) {
+            if (c.igInputTextWithHint("gray letters", "> list gray letters", @ptrCast([*c]u8, filter.gray_letters[0..]), @intCast(usize, filter.gray_letters.len), c.ImGuiInputTextFlags_CharsUppercase, null, null)) {
                 // user entered a filter, filter the words!
                 try filterWords(words, &filtered_words, filter);
                 try rasterizeWords(filtered_words, &rasterized_words);
@@ -181,10 +150,7 @@ pub fn main() !void {
             c.igText("Found %i words.", filtered_words.items.len);
 
             c.igSeparator();
-            c.igTextUnformatted(
-                @ptrCast([*c]const u8, rasterized_words.items),
-                @ptrCast([*c]const u8, &rasterized_words.items[rasterized_words.items.len-1])
-            );
+            c.igTextUnformatted(@ptrCast([*c]const u8, rasterized_words.items), @ptrCast([*c]const u8, &rasterized_words.items[rasterized_words.items.len - 1]));
 
             c.igEnd();
         }
@@ -220,25 +186,27 @@ pub fn main() !void {
 }
 
 const kMaxWordLen: usize = 6;
-fn gatherWords(word_len: usize, input: [:0]const u8, words: *std.ArrayList([kMaxWordLen+1]u8)) !void {
+fn gatherWords(word_len: usize, input: [:0]const u8, words: *std.ArrayList([kMaxWordLen + 1]u8)) !void {
     std.debug.assert(word_len <= kMaxWordLen);
     words.clearRetainingCapacity();
 
     var iter = std.mem.split(u8, input, "\n");
     while (iter.next()) |line| {
         if (line.len > 0) {
-            var adjust: usize = if (line[line.len-1] == 13) 1 else 0;
+            var adjust: usize = if (line[line.len - 1] == 13) 1 else 0;
             if (line.len == word_len + adjust) {
-                var buf: [kMaxWordLen+1]u8 = [_]u8{' '} ** (kMaxWordLen+1);
+                var buf: [kMaxWordLen + 1]u8 = [_]u8{' '} ** (kMaxWordLen + 1);
                 buf[kMaxWordLen] = '\n';
-                for (line[0..line.len-adjust]) |l, i| { buf[i] = l; }
+                for (line[0 .. line.len - adjust]) |l, i| {
+                    buf[i] = l;
+                }
                 try words.append(buf);
             }
         }
     }
 }
 
-fn filterWords(words: std.ArrayList([kMaxWordLen+1]u8), filtered_words: *std.ArrayList([kMaxWordLen+1]u8), filter: Filter) !void {
+fn filterWords(words: std.ArrayList([kMaxWordLen + 1]u8), filtered_words: *std.ArrayList([kMaxWordLen + 1]u8), filter: Filter) !void {
     filtered_words.clearRetainingCapacity();
     try filtered_words.ensureTotalCapacity(words.items.len);
 
@@ -248,9 +216,7 @@ fn filterWords(words: std.ArrayList([kMaxWordLen+1]u8), filtered_words: *std.Arr
         // green
         for (word) |w, i| {
             if (filter.green_letters[i] == 0) break;
-            if (filter.green_letters[i] != ' '
-                    and (filter.green_letters[i] != w
-                             and filter.green_letters[i] + 32 != w)) {
+            if (filter.green_letters[i] != ' ' and (filter.green_letters[i] != w and filter.green_letters[i] + 32 != w)) {
                 pass = false;
                 break;
             }
@@ -260,7 +226,7 @@ fn filterWords(words: std.ArrayList([kMaxWordLen+1]u8), filtered_words: *std.Arr
         for (word) |w| {
             for (filter.gray_letters) |g| {
                 if (g == 0) break;
-                if (g == w or g +32 == w) {
+                if (g == w or g + 32 == w) {
                     pass = false;
                     break;
                 }
@@ -290,9 +256,9 @@ fn filterWords(words: std.ArrayList([kMaxWordLen+1]u8), filtered_words: *std.Arr
     }
 }
 
-fn rasterizeWords(words: std.ArrayList([kMaxWordLen+1]u8), rasterized_words: *std.ArrayList(u8)) !void {
+fn rasterizeWords(words: std.ArrayList([kMaxWordLen + 1]u8), rasterized_words: *std.ArrayList(u8)) !void {
     rasterized_words.clearRetainingCapacity();
-    try rasterized_words.ensureTotalCapacity((kMaxWordLen+1) * words.items.len + 1);
+    try rasterized_words.ensureTotalCapacity((kMaxWordLen + 1) * words.items.len + 1);
 
     for (words.items) |word| {
         rasterized_words.appendSliceAssumeCapacity(word[0..word.len]);
@@ -301,12 +267,12 @@ fn rasterizeWords(words: std.ArrayList([kMaxWordLen+1]u8), rasterized_words: *st
 }
 
 const Filter = struct {
-    green_letters: [kMaxWordLen+1]u8,
-    yellow_letters: [kMaxWordLen+1]u8,
+    green_letters: [kMaxWordLen + 1]u8,
+    yellow_letters: [kMaxWordLen + 1]u8,
     gray_letters: [30]u8,
 
     pub fn init() Filter {
-        var filter = Filter{.green_letters = undefined, .gray_letters = undefined, .yellow_letters = undefined};
+        var filter = Filter{ .green_letters = undefined, .gray_letters = undefined, .yellow_letters = undefined };
         filter.green_letters = [_]u8{0} ** filter.green_letters.len;
         filter.yellow_letters = [_]u8{0} ** filter.yellow_letters.len;
         filter.gray_letters = [_]u8{0} ** filter.gray_letters.len;

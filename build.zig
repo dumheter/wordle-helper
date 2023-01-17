@@ -1,19 +1,18 @@
-const std = @import("std");
 const Builder = @import("std").build.Builder;
 const glfw = @import("deps/mach-glfw/build.zig");
+const zimgui = @import("deps/zimgui/build.zig");
 
 pub fn build(b: *Builder) void {
     const target = b.standardTargetOptions(.{});
-
     const mode = b.standardReleaseOptions();
 
     const exe = b.addExecutable("dedit", "src/main.zig");
-    exe.subsystem = std.Target.SubSystem.Windows;
+    //exe.subsystem = std.Target.SubSystem.Windows;
     exe.setTarget(target);
     exe.setBuildMode(mode);
 
     exe.addPackagePath("glfw", "deps/mach-glfw/src/main.zig");
-    glfw.link(b, exe, .{});
+    glfw.link(b, exe, .{}) catch unreachable;
 
     exe.addCSourceFiles(&[_][]const u8 {
         "deps/imgui/imgui.cpp",
@@ -26,7 +25,7 @@ pub fn build(b: *Builder) void {
         "deps/imgui/cimgui/cimgui.cpp",
         }, &[_][]const u8 {});
     exe.linkLibCpp();
-    exe.addIncludeDir("deps/imgui");
+    exe.addIncludePath("deps/imgui");
 
     exe.install();
     b.default_step.dependOn(&exe.step);
