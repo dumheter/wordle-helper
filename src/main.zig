@@ -184,7 +184,7 @@ pub fn main() !void {
     glfw.terminate();
 }
 
-const kMaxWordLen: usize = 6;
+const kMaxWordLen: usize = 20;
 fn gatherWords(word_len: usize, input: [:0]const u8, words: *std.ArrayList([kMaxWordLen + 1]u8)) !void {
     std.debug.assert(word_len <= kMaxWordLen);
     words.clearRetainingCapacity();
